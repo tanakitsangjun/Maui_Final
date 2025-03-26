@@ -22,6 +22,7 @@ func DemoController(router *gin.Engine, gormdb *gorm.DB) {
 		routers.PUT("/users/:id/change-password", changePassword)
 		routers.GET("/products/search", searchProducts)
 		routers.POST("/cart/add/:id", addToCart)
+		routers.GET("/carts/:id", getAllCarts)
 	}
 }
 
@@ -55,7 +56,7 @@ func login(c *gin.Context) {
 
 func updateUserInfo(c *gin.Context) {
 	id := c.Param("id")
-	var updateRequest dto.UpdateCustomerRequest
+	updateRequest := dto.UpdateCustomerRequest{}
 	if err := c.ShouldBindJSON(&updateRequest); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
@@ -197,7 +198,6 @@ func addToCart(c *gin.Context) {
 		}
 	}
 
-	// Fetch cart items with product details
 	cartItems := []dto.CartItemResponse{}
 	err := database.Table("cart_item").
 		Select("cart_item.cart_item_id, product.product_name, product.description, product.price, cart_item.quantity").
@@ -225,6 +225,58 @@ func addToCart(c *gin.Context) {
 		"message": "เพิ่มสินค้าลงรถเข็นสำเร็จ",
 		"cart":    response,
 	})
+}
+
+func getAllCarts(c *gin.Context) {
+	customerID := c.Param("id")
+	customer := model.Customer{}
+	if err := database.First(&customer, customerID).Error; err != nil {
+		c.JSON(404, gin.H{"error": "ไม่พบข้อมูลลูกค้า"})
+		return
+	}
+
+	carts := []model.Cart{}
+	if err := database.Where("customer_id = ?", customerID).Find(&carts).Error; err != nil {
+		c.JSON(500, gin.H{"error": "ไม่สามารถดึงข้อมูลรถเข็นได้"})
+		return
+	}
+	response := dto.AllCartsResponse{
+		CustomerID:   customer.CustomerID,
+		CustomerName: customer.FirstName + " " + customer.LastName,
+		Carts:        []dto.CartResponse{},
+	}
+
+	for _, cart := range carts {
+		cartItems := []dto.CartItemResponse{}
+		err := database.Table("cart_item").
+			Select(`
+                cart_item.cart_item_id,
+                product.product_name,
+                product.description,
+                product.price,
+                cart_item.quantity
+            `).
+			Joins("JOIN product ON product.product_id = cart_item.product_id").
+			Where("cart_item.cart_id = ?", cart.CartID).
+			Scan(&cartItems).Error
+
+		if err != nil {
+			continue
+		}
+
+		for i := range cartItems {
+			price, _ := strconv.ParseFloat(cartItems[i].Price, 64)
+			cartItems[i].TotalAmount = price * float64(cartItems[i].Quantity)
+		}
+
+		cartResponse := dto.CartResponse{
+			CartID:   cart.CartID,
+			CartName: cart.CartName,
+			Items:    cartItems,
+		}
+		response.Carts = append(response.Carts, cartResponse)
+	}
+	c.JSON(200, response)
 }
 
 func parseInt(s string) int {

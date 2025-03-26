@@ -26,3 +26,9 @@ type CartResponse struct {
 	CartName string             `json:"cart_name"`
 	Items    []CartItemResponse `json:"items"`
 }
+
+type AllCartsResponse struct {
+	CustomerID   int            `json:"customer_id"`
+	CustomerName string         `json:"customer_name"`
+	Carts        []CartResponse `json:"carts"`
+}
